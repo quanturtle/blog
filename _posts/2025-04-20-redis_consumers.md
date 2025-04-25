@@ -7,7 +7,7 @@ author: quanturtle
 > Redis + asyncio + SQLModel
 
 >TL;DR — We’ll wire up Redis Streams to buffer messages, a consumer-group of asyncio workers to process them in parallel, and SQLModel + PostgreSQL to persist everything safely.
-The full repo lives in supermarket-py/; below are the key excerpts you can drop straight into your own project.
+The full repo lives in [supermarket-py](https://github.com/quanturtle/supermarket-py); below are the key excerpts you can drop straight into your own project.
 
 In this tutorial, we'll explore how to build a scalable and asynchronous worker system using:
 
@@ -21,7 +21,7 @@ In this tutorial, we'll explore how to build a scalable and asynchronous worker 
 
 This setup is ideal for systems where hundreds of messages might flood in from producers (e.g., web scrapers, crawlers, sensors, APIs), and you want to persist them in a PostgreSQL-backed data store reliably and fast.
 
-The code shown here is part of a larger project: supermarket-py. The worker module and code can be found here.
+The code shown here is part of a larger project: [supermarket-py](https://github.com/quanturtle/supermarket-py). The worker module and code can be found here.
 
 ## 💡 Architecture Overview
 Here's a bird's eye view of the system:
@@ -45,21 +45,19 @@ Redis is an open-source, in-memory key-value data structure server used primaril
 Commands we will be using to build our application:
 
 ### XGROUP CREATE (docs)
-
 ```sh
 XGROUP CREATE key group <id | $> [MKSTREAM]
 ```
 ```python
 redis_conn.xgroup_create(STREAM_NAME, GROUP_NAME, id='0', mkstream=True)
 ```
+
 * Creates a consumer group named GROUP_NAME for the stream STREAM_NAME.
-
 * If the stream doesn’t exist yet, mkstream=True creates it automatically.
-
 * id='0' means consumers will read all messages from the beginning.
 
-### XREADGROUP (docs)
 
+### XREADGROUP (docs)
 ```sh
 XREADGROUP GROUP group consumer [COUNT count] [BLOCK milliseconds]
   [NOACK] STREAMS key [key ...] id [id ...]
@@ -73,9 +71,11 @@ redis_conn.xreadgroup(groupname=GROUP_NAME,
                       count=BATCH_SIZE, 
                       block=BLOCK_MS, )
 ```
+
 * Reads up to `BATCH_SIZE` messages assigned to this worker.
 * `'>'` means: “Give me messages never delivered to any other consumer.”
 * `block=BLOCK_MS` waits (long-polling) for new messages instead of returning immediately.
+
 
 ### XADD (docs)
 ```sh
@@ -85,6 +85,7 @@ XADD key [NOMKSTREAM] [<MAXLEN | MINID> [= | ~] threshold
 ```python
 redis_conn.xadd(STREAM_NAME, {"data": json.dumps(data)})
 ```
+
 * Adds a single entry to a stream
 
 
@@ -97,8 +98,10 @@ for row in table:
 
 pipe.execute()
 ```
+
 * Batch Redis commands
 * Avoid network overhead of sending individual messages
+
 
 ### XACK (docs)
 ```sh
@@ -107,11 +110,13 @@ XACK key group id [id ...]
 ```python
 redis_conn.xack(STREAM_NAME, GROUP_NAME, *message_ids)
 ```
+
 * Confirms to Redis that the consumer has successfully processed the message.
 * This removes it from the "pending" queue of unacknowledged messages.
 * Without this step, Redis will think the message is still being processed and may redeliver it later (e.g., after a timeout or crash recovery).
 
 We only acknowledge messages after they are inserted into the database successfully. This ensures at-least-once delivery.
+
 
 ### 🧰 redis-py
 Create a connection to a running Redis server:
@@ -307,7 +312,7 @@ AsyncSessionLocal = async_sessionmaker(
 )
 ```
 
-Messages are stored as JSON in a "data" field. A valid entry is parsed and mapped into a SQLModel ORM instance:
+Messages are stored as JSON in a `"data"` field. A valid entry is parsed and mapped into a SQLModel ORM instance:
 ```python
         try:
             async with AsyncSessionLocal() as session:
@@ -331,7 +336,7 @@ Full process_messages function:
 STREAM_MODEL_MAP: Dict[str, Type] = {
     STREAM_NAME_1: DatabaseTable1,
     STREAM_NAME_2: DatabaseTable2,
-
+}
     
 async def process_messages(consumer_name: str, messages: List) -> int:
     if not messages:
@@ -421,11 +426,14 @@ uv run worker/producer.py --mode bulk --entity Product
 ```
 
 Run stream (uses single xadd commands):
+![]()
 
-
+![]()
 
 Run bulk (uses pipeline.xadd):
 
+![]()
 
+![]()
 
 Feedback & PRs welcome over at `github.com/quanturtle/supermarket‑py`
