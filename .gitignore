@@ -37,3 +37,6 @@ ehthumbs.db
 Thumbs.db
 
 _drafts/
+.python-version
+main.py
+pyproject.toml
