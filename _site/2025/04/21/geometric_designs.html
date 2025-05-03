@@ -1,0 +1,238 @@
+<h1 id="️-geometric-and-artistic-designs-with-your-micro-computer">🖼️ Geometric and Artistic Designs with your Micro Computer</h1>
+<blockquote>
+  <p>Recursion + Computer Graphics + 3D printing</p>
+</blockquote>
+
+<blockquote>
+  <p>TL;DR — Translated designs from BASIC to modern python and then 3D printed them. All code for this project can be found in my repository: Dessins Geometriques et Artistiques.</p>
+</blockquote>
+
+<p>Tangents lead to tangents that lead to further tangents and then I found v3ga’s repository.</p>
+
+<p>That’s how I read about Jean-Paul Delahaye and his book Dessins Géométriques et Artistiques avec votre micro-ordinateur (1985).</p>
+
+<p><img src="/img/geometric_designs/geometric_designs_1.jpg" alt="" /></p>
+
+<p>I immediately fell in love with his work and how he was using the technology available at the time to bring this equations into the real world. Namely Microsoft’s BASIC programming language and a Canon X-07 with a X-710 plotter.</p>
+
+<p>Have a look:</p>
+
+<p><a href="https://www.youtube.com/watch?v=JWhNcsYoXQ0"><img src="https://img.youtube.com/vi/JWhNcsYoXQ0/0.jpg" alt="Video Title" /></a></p>
+
+<p>His designs, scanned from an original edition, have that distinctive hue of yellow that you get from an old book.</p>
+
+<p><img src="/img/geometric_designs/geometric_designs_02.jpg" alt="" /></p>
+
+<p><img src="/img/geometric_designs/geometric_designs_03.jpg" alt="" /></p>
+
+<p><img src="/img/geometric_designs/geometric_designs_04.jpg" alt="" /></p>
+
+<p><img src="/img/geometric_designs/geometric_designs_05.jpg" alt="" /></p>
+
+<div class="grid-container">
+    <img src="./img/geometric_designs/geometric_designs_02.jpg" alt="Design 02" />
+    <img src="./img/geometric_designs/geometric_designs_03.jpg" alt="Design 03" />
+    <img src="./img/geometric_designs/geometric_designs_04.jpg" alt="Design 04" />
+    <img src="./img/geometric_designs/geometric_designs_05.jpg" alt="Design 05" />
+</div>
+
+<h2 id="how-can-i-recreate-these-designs">How can I recreate these designs?</h2>
+<p>The book provides clear instructions on how to set up everything we need to draw:</p>
+
+<p><img src="./img/geometric_designs/" alt="" /></p>
+
+<p>Important things:</p>
+
+<ul>
+  <li>Program structure
+    <ul>
+      <li>ligne 10: indicates de name of the program</li>
+      <li>ligne 50: variable initialization</li>
+      <li>Rest of the program (generally, there is a drawing loop)</li>
+    </ul>
+  </li>
+  <li>Drawing windows
+    <ul>
+      <li>Generally, programs use a drawing window of 480px (NP=480)</li>
+      <li>Values for X and Y are constrained:
+        <ul>
+          <li>0 &lt; X &lt; NP</li>
+          <li>0 &lt; Y &lt; NP</li>
+        </ul>
+      </li>
+    </ul>
+  </li>
+  <li>If you were using a different printer, there are instructions on how to translate those commands to different hardware</li>
+  <li>Finally, directions to modify the programs so users can create their own designs are provided.</li>
+</ul>
+
+<h2 id="no-french-no-basic">No French? No BASIC?</h2>
+<p>v3ga used p5.js to code the designs again in modern javascript. I don’t know javascript so I opted for python and specifically its Turtle module. Turtle allows you to move a cursor and draw in the same way the Canon X-07 could, so we give it a try:</p>
+
+<p><img src="" alt="" /></p>
+
+<p>Import + set up our canvas:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">import</span> <span class="n">math</span>
+<span class="kn">import</span> <span class="n">turtle</span>
+<span class="kn">from</span> <span class="n">typing</span> <span class="kn">import</span> <span class="n">Optional</span>
+
+
+<span class="k">def</span> <span class="nf">setup_canvas</span><span class="p">(</span><span class="n">NP</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">480</span><span class="p">):</span>
+    <span class="sh">"""</span><span class="s">
+    Sets a window of size NP x NP in </span><span class="sh">'</span><span class="s">turtle</span><span class="sh">'</span><span class="s"> coordinates.
+    </span><span class="sh">"""</span>
+    <span class="n">turtle</span><span class="p">.</span><span class="nf">setup</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="n">NP</span><span class="p">,</span> <span class="n">height</span><span class="o">=</span><span class="n">NP</span><span class="p">)</span>
+    <span class="n">turtle</span><span class="p">.</span><span class="nf">setworldcoordinates</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">NP</span><span class="p">,</span> <span class="n">NP</span><span class="p">)</span>
+    <span class="n">turtle</span><span class="p">.</span><span class="nf">speed</span><span class="p">(</span><span class="sh">"</span><span class="s">fastest</span><span class="sh">"</span><span class="p">)</span>
+    
+    <span class="n">turtle</span><span class="p">.</span><span class="nf">penup</span><span class="p">()</span>
+    <span class="n">turtle</span><span class="p">.</span><span class="nf">goto</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">turtle</span><span class="p">.</span><span class="nf">pendown</span><span class="p">()</span>
+</code></pre></div></div>
+
+<p>Translate and compose a drawing function:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">draw_star_at_center</span><span class="p">(</span>
+    <span class="n">K</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> 
+    <span class="n">H</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> 
+    <span class="n">center_x</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> 
+    <span class="n">center_y</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> 
+    <span class="n">radius</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> 
+    <span class="n">angle_offset</span><span class="p">:</span> <span class="nb">float</span><span class="o">=</span><span class="mf">0.0</span>
+<span class="p">):</span>
+    <span class="sh">"""</span><span class="s">
+    Draw a star of K edges, skipping H points, 
+    centered at (center_x, center_y) with given radius and angle offset.
+    </span><span class="sh">"""</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">K</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">angle</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">math</span><span class="p">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">H</span> <span class="o">*</span> <span class="n">i</span> <span class="o">/</span> <span class="n">K</span><span class="p">)</span> <span class="o">+</span> <span class="n">angle_offset</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">center_x</span> <span class="o">+</span> <span class="n">radius</span> <span class="o">*</span> <span class="n">math</span><span class="p">.</span><span class="nf">cos</span><span class="p">(</span><span class="n">angle</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">center_y</span> <span class="o">+</span> <span class="n">radius</span> <span class="o">*</span> <span class="n">math</span><span class="p">.</span><span class="nf">sin</span><span class="p">(</span><span class="n">angle</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">turtle</span><span class="p">.</span><span class="nf">penup</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">turtle</span><span class="p">.</span><span class="nf">pendown</span><span class="p">()</span>
+        
+        <span class="n">turtle</span><span class="p">.</span><span class="nf">goto</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>Use the drawing function inside a composition:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">composition_1</span><span class="p">(</span>
+    <span class="n">NP</span><span class="p">:</span> <span class="nb">int</span><span class="o">=</span><span class="mi">480</span><span class="p">,</span> 
+    <span class="n">K1</span><span class="p">:</span> <span class="nb">int</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> 
+    <span class="n">R1_ratio</span><span class="p">:</span> <span class="nb">float</span><span class="o">=</span><span class="mf">0.27</span><span class="p">,</span> 
+    <span class="n">A1</span><span class="p">:</span> <span class="nb">float</span><span class="o">=</span><span class="n">math</span><span class="p">.</span><span class="n">pi</span><span class="p">,</span> 
+    <span class="n">DX</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> 
+    <span class="n">DY</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> 
+    <span class="n">K</span><span class="p">:</span> <span class="nb">int</span><span class="o">=</span><span class="mi">25</span><span class="p">,</span> 
+    <span class="n">H</span><span class="p">:</span> <span class="nb">int</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> 
+    <span class="n">R_ratio</span><span class="p">:</span> <span class="nb">float</span><span class="o">=</span><span class="mf">0.22</span><span class="p">,</span> 
+    <span class="n">AD</span><span class="p">:</span> <span class="nb">float</span><span class="o">=</span><span class="n">math</span><span class="p">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span>
+<span class="p">):</span>
+    <span class="sh">"""</span><span class="s">
+      1) We have K1 equally spaced points around a circle of radius (R1_ratio*NP)
+         centered at (DX, DY). The angle offset for that circle is A1.
+      2) For each of those K1 points, we draw a star using skip H,
+         with K edges, radius = (R_ratio * NP), angle offset = AD.
+    </span><span class="sh">"""</span>
+    <span class="k">if</span> <span class="n">DX</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span> 
+        <span class="n">DX</span> <span class="o">=</span> <span class="n">NP</span> <span class="o">/</span> <span class="mi">2</span>
+    <span class="k">if</span> <span class="n">DY</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span> 
+        <span class="n">DY</span> <span class="o">=</span> <span class="n">NP</span> <span class="o">/</span> <span class="mi">2</span>
+    
+    <span class="c1"># Loop over the K1 points around a circle
+</span>    <span class="k">for</span> <span class="n">i1</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">K1</span><span class="p">):</span>
+    
+        <span class="c1"># Compute the center (CX, CY) of the star
+</span>        <span class="n">theta</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">math</span><span class="p">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">i1</span> <span class="o">/</span> <span class="n">K1</span><span class="p">)</span> <span class="o">+</span> <span class="n">A1</span>
+        <span class="n">CX</span> <span class="o">=</span> <span class="n">DX</span> <span class="o">+</span> <span class="p">(</span><span class="n">R1_ratio</span> <span class="o">*</span> <span class="n">NP</span><span class="p">)</span> <span class="o">*</span> <span class="n">math</span><span class="p">.</span><span class="nf">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+        <span class="n">CY</span> <span class="o">=</span> <span class="n">DY</span> <span class="o">+</span> <span class="p">(</span><span class="n">R1_ratio</span> <span class="o">*</span> <span class="n">NP</span><span class="p">)</span> <span class="o">*</span> <span class="n">math</span><span class="p">.</span><span class="nf">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+        
+        <span class="c1"># Now draw an H-skip star with K edges at (CX, CY)
+</span>        <span class="nf">draw_star_at_center</span><span class="p">(</span>
+            <span class="n">K</span><span class="o">=</span><span class="n">K</span><span class="p">,</span> <span class="n">H</span><span class="o">=</span><span class="n">H</span><span class="p">,</span> 
+            <span class="n">center_x</span><span class="o">=</span><span class="n">CX</span><span class="p">,</span> <span class="n">center_y</span><span class="o">=</span><span class="n">CY</span><span class="p">,</span> 
+            <span class="n">radius</span><span class="o">=</span><span class="n">R_ratio</span> <span class="o">*</span> <span class="n">NP</span><span class="p">,</span> 
+            <span class="n">angle_offset</span><span class="o">=</span><span class="n">AD</span>
+        <span class="p">)</span>
+
+    <span class="n">turtle</span><span class="p">.</span><span class="nf">hideturtle</span><span class="p">()</span>
+    <span class="n">turtle</span><span class="p">.</span><span class="nf">exitonclick</span><span class="p">()</span>
+</code></pre></div></div>
+
+<p>Run the whole thing:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="n">NP</span><span class="o">=</span><span class="mi">480</span>
+    <span class="nf">setup_canvas</span><span class="p">(</span><span class="n">NP</span><span class="p">)</span>
+    <span class="nf">composition_1</span><span class="p">(</span>
+        <span class="n">NP</span><span class="o">=</span><span class="n">NP</span><span class="p">,</span>
+        <span class="n">K1</span><span class="o">=</span><span class="mi">25</span><span class="p">,</span>
+        <span class="n">R1_ratio</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span>
+        <span class="n">A1</span><span class="o">=</span><span class="n">math</span><span class="p">.</span><span class="n">pi</span><span class="p">,</span>
+        <span class="n">K</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+        <span class="n">H</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="n">R_ratio</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span>
+        <span class="n">AD</span><span class="o">=</span><span class="n">math</span><span class="p">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">2</span>
+    <span class="p">)</span>
+
+<span class="nf">main</span><span class="p">()</span>
+</code></pre></div></div>
+
+<p>But…but…I don’t have one of <em>those</em> printers</p>
+
+<p>I don’t have a X-710 plotter but I have a 3D printer (a BambuLab X1C).</p>
+
+<h2 id="how-can-i-print-something-like-this">How can I print something like this?</h2>
+<p>In this exercise in creative coding, I wanted to take these shapes and make them real.</p>
+
+<p>My programs generate X, Y coordinates so that the turtle head can trace the designs. We could use those same coordinates to describe a 3D shape.</p>
+
+<p>In order to achieve this, I decided to 3D print these designs but for that, I had to learn CAD.</p>
+
+<p>After trying some libraries, I decided to go for <a href=""><code class="language-plaintext highlighter-rouge">build123d</code></a>:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="n">typing</span> <span class="kn">import</span> <span class="n">List</span>
+<span class="kn">from</span> <span class="n">build123d</span> <span class="kn">import</span> <span class="o">*</span>
+
+
+<span class="k">def</span> <span class="nf">generate_cad</span><span class="p">(</span><span class="n">pts</span><span class="p">:</span> <span class="n">List</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="k">with</span> <span class="nc">BuildPart</span><span class="p">()</span> <span class="k">as</span> <span class="n">part</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nc">BuildSketch</span><span class="p">(</span><span class="n">Plane</span><span class="p">.</span><span class="n">XZ</span><span class="p">)</span> <span class="k">as</span> <span class="n">s</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nc">BuildLine</span><span class="p">()</span> <span class="k">as</span> <span class="n">l</span><span class="p">:</span>
+                <span class="n">l1</span> <span class="o">=</span> <span class="nc">Polyline</span><span class="p">(</span><span class="o">*</span><span class="n">pts</span><span class="p">)</span>
+            
+            <span class="nf">trace</span><span class="p">(</span><span class="n">line_width</span><span class="o">=</span><span class="mf">3.5</span><span class="p">)</span>
+        
+        <span class="nf">extrude</span><span class="p">(</span><span class="n">amount</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">name</span><span class="p">:</span>
+            <span class="nf">export_stl</span><span class="p">(</span><span class="n">part</span><span class="p">.</span><span class="n">part</span><span class="p">,</span> <span class="sa">f</span><span class="sh">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s">.stl</span><span class="sh">"</span><span class="p">)</span>
+        
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nf">export_stl</span><span class="p">(</span><span class="n">part</span><span class="p">.</span><span class="n">part</span><span class="p">,</span> <span class="sh">"</span><span class="s">my_design.stl</span><span class="sh">"</span><span class="p">)</span>
+
+    <span class="k">except</span> <span class="nb">Exception</span> <span class="k">as</span> <span class="n">err</span><span class="p">:</span>
+        <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="s">Error exporting STL: </span><span class="si">{</span><span class="n">err</span><span class="si">}</span><span class="sh">"</span><span class="p">)</span>
+        
+    <span class="k">return</span>
+</code></pre></div></div>
+
+<p>Important things here:</p>
+<ul>
+  <li>We use <code class="language-plaintext highlighter-rouge">build123d</code> <code class="language-plaintext highlighter-rouge">builder_mode</code> (using context managers to build the object)</li>
+  <li>We use <code class="language-plaintext highlighter-rouge">polyline</code>: we provide a list of coordinates and connect them to generate our shape</li>
+  <li>We trace that line so that it has actual <code class="language-plaintext highlighter-rouge">width</code> (turn the object from 1D to 2D)</li>
+  <li>We <code class="language-plaintext highlighter-rouge">extrude</code> our 2D object over the <code class="language-plaintext highlighter-rouge">Z axis</code> to have an object with <code class="language-plaintext highlighter-rouge">volume</code></li>
+  <li>Finally, export the design and you can throw it in your slicer ready to print!</li>
+</ul>
+
+<p><img src="" alt="" /></p>
+
+<p><img src="" alt="" /></p>
+
+<p>Re-coding Jean-Paul Delahaye’s 1980-era BASIC sketches in modern Python—and then turning those digital tracings into tangible objects—felt like finishing a conversation that began four decades ago.</p>
+
+<p>Along the way we bridged three generations of “maker” tools: early micro-computers, modern programming languages, and today’s rapid-prototyping hardware. What started as a simple port became a reminder that code—no matter how old—can keep expressing itself in new mediums as long as we’re willing to translate it.</p>
+
+<p>I hope these examples encourage you to dust off other vintage algorithms, give them a modern dialect, and let today’s machines draw them in plastic, resin, or whatever comes next.</p>

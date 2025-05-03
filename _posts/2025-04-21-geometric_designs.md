@@ -30,12 +30,6 @@ His designs, scanned from an original edition, have that distinctive hue of yell
 
 ![](/img/geometric_designs/geometric_designs_05.jpg)
 
-<div class="grid-container">
-    <img src="./img/geometric_designs/geometric_designs_02.jpg" alt="Design 02">
-    <img src="./img/geometric_designs/geometric_designs_03.jpg" alt="Design 03">
-    <img src="./img/geometric_designs/geometric_designs_04.jpg" alt="Design 04">
-    <img src="./img/geometric_designs/geometric_designs_05.jpg" alt="Design 05">
-</div>
 
 ## How can I recreate these designs?
 The book provides clear instructions on how to set up everything we need to draw:

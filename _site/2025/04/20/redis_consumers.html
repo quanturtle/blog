@@ -1,0 +1,430 @@
+<h1 id="-building-a-high-throughput-async-consumer-system-with-redis-streams-and-sqlmodel">🚀 Building a High-Throughput Async Consumer System with Redis Streams and SQLModel</h1>
+<blockquote>
+  <p>Redis + asyncio + SQLModel</p>
+</blockquote>
+
+<blockquote>
+  <p>TL;DR — We’ll wire up Redis Streams to buffer messages, a consumer-group of asyncio workers to process them in parallel, and SQLModel + PostgreSQL to persist everything safely.
+The full repo lives in <a href="https://github.com/quanturtle/supermarket-py">supermarket-py</a>; below are the key excerpts you can drop straight into your own project.</p>
+</blockquote>
+
+<p>In this tutorial, we’ll explore how to build a scalable and asynchronous worker system using:</p>
+
+<ul>
+  <li>
+    <p>🧰 Redis Streams as the message queue,</p>
+  </li>
+  <li>
+    <p>🐍 Python asyncio for concurrency,</p>
+  </li>
+  <li>
+    <p>🔁 SQLModel + PostgreSQL for persisting data,</p>
+  </li>
+  <li>
+    <p>🔗 Multiple workers running in parallel for efficient processing.</p>
+  </li>
+</ul>
+
+<p>This setup is ideal for systems where hundreds of messages might flood in from producers (e.g., web scrapers, crawlers, sensors, APIs), and you want to persist them in a PostgreSQL-backed data store reliably and fast.</p>
+
+<p>The code shown here is part of a larger project: <a href="https://github.com/quanturtle/supermarket-py">supermarket-py</a>. The worker module and code can be found here.</p>
+
+<h2 id="-architecture-overview">💡 Architecture Overview</h2>
+<p>Here’s a bird’s eye view of the system:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[Producers] → [Redis] → [Consumer Group] → [Workers] → [Postgres DB]
+</code></pre></div></div>
+<p>A consumer group allows multiple workers to consume from the same stream without duplicating work. Redis internally keeps track of which worker has read which messages, so each message is delivered only once to a single consumer.</p>
+
+<p>Similar options include:</p>
+
+<ul>
+  <li>Redis PubSub</li>
+  <li>Kafka</li>
+  <li>RabbitMQ</li>
+</ul>
+
+<p>Each system has its own advantages/disadvantages/use cases, consider them carefully before choosing them for you next project.</p>
+
+<h2 id="-redis">🧰 Redis</h2>
+<p>Redis is an open-source, in-memory key-value data structure server used primarily as a database, cache, or message broker. It stores data in RAM, offering low-latency reads and writes, making it ideal for applications needing fast data access and manipulation.</p>
+
+<p>Commands we will be using to build our application:</p>
+
+<h3 id="xgroup-create-docs">XGROUP CREATE (docs)</h3>
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>XGROUP CREATE key group &lt;<span class="nb">id</span> | <span class="nv">$&gt;</span> <span class="o">[</span>MKSTREAM]
+</code></pre></div></div>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">redis_conn</span><span class="p">.</span><span class="nf">xgroup_create</span><span class="p">(</span><span class="n">STREAM_NAME</span><span class="p">,</span> <span class="n">GROUP_NAME</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="sh">'</span><span class="s">0</span><span class="sh">'</span><span class="p">,</span> <span class="n">mkstream</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+</code></pre></div></div>
+
+<ul>
+  <li>Creates a consumer group named GROUP_NAME for the stream STREAM_NAME.</li>
+  <li>If the stream doesn’t exist yet, mkstream=True creates it automatically.</li>
+  <li>id=’0’ means consumers will read all messages from the beginning.</li>
+</ul>
+
+<h3 id="xreadgroup-docs">XREADGROUP (docs)</h3>
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>XREADGROUP GROUP group consumer <span class="o">[</span>COUNT count] <span class="o">[</span>BLOCK milliseconds]
+  <span class="o">[</span>NOACK] STREAMS key <span class="o">[</span>key ...] <span class="nb">id</span> <span class="o">[</span><span class="nb">id</span> ...]
+</code></pre></div></div>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">redis_conn</span><span class="p">.</span><span class="nf">xreadgroup</span><span class="p">(</span><span class="n">groupname</span><span class="o">=</span><span class="n">GROUP_NAME</span><span class="p">,</span> 
+                      <span class="n">consumername</span><span class="o">=</span><span class="n">consumer_name</span><span class="p">,</span> 
+                      <span class="n">streams</span><span class="o">=</span><span class="p">{</span>
+                        <span class="n">STREAM_NAME</span><span class="p">:</span> <span class="sh">'</span><span class="s">&gt;</span><span class="sh">'</span>
+                      <span class="p">},</span> 
+                      <span class="n">count</span><span class="o">=</span><span class="n">BATCH_SIZE</span><span class="p">,</span> 
+                      <span class="n">block</span><span class="o">=</span><span class="n">BLOCK_MS</span><span class="p">,</span> <span class="p">)</span>
+</code></pre></div></div>
+
+<ul>
+  <li>Reads up to <code class="language-plaintext highlighter-rouge">BATCH_SIZE</code> messages assigned to this worker.</li>
+  <li><code class="language-plaintext highlighter-rouge">'&gt;'</code> means: “Give me messages never delivered to any other consumer.”</li>
+  <li><code class="language-plaintext highlighter-rouge">block=BLOCK_MS</code> waits (long-polling) for new messages instead of returning immediately.</li>
+</ul>
+
+<h3 id="xadd-docs">XADD (docs)</h3>
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>XADD key <span class="o">[</span>NOMKSTREAM] <span class="o">[</span>&lt;MAXLEN | MINID&gt; <span class="o">[=</span> | ~] threshold
+    <span class="o">[</span>LIMIT count]] &lt;<span class="k">*</span> | <span class="nb">id</span><span class="o">&gt;</span> field value <span class="o">[</span>field value ...]
+</code></pre></div></div>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">redis_conn</span><span class="p">.</span><span class="nf">xadd</span><span class="p">(</span><span class="n">STREAM_NAME</span><span class="p">,</span> <span class="p">{</span><span class="sh">"</span><span class="s">data</span><span class="sh">"</span><span class="p">:</span> <span class="n">json</span><span class="p">.</span><span class="nf">dumps</span><span class="p">(</span><span class="n">data</span><span class="p">)})</span>
+</code></pre></div></div>
+
+<ul>
+  <li>Adds a single entry to a stream</li>
+</ul>
+
+<h3 id="pipeline-docs">PIPELINE (docs)</h3>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">pipeline</span> <span class="o">=</span> <span class="n">redis_conn</span><span class="p">.</span><span class="nf">pipeline</span><span class="p">()</span>
+
+<span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">table</span><span class="p">:</span>
+    <span class="n">pipeline</span><span class="p">.</span><span class="nf">xadd</span><span class="p">(</span><span class="n">STREAM_NAME</span><span class="p">,</span> <span class="p">{</span><span class="sh">"</span><span class="s">data</span><span class="sh">"</span><span class="p">:</span> <span class="n">json</span><span class="p">.</span><span class="nf">dumps</span><span class="p">(</span><span class="n">row</span><span class="p">)})</span>
+
+<span class="n">pipe</span><span class="p">.</span><span class="nf">execute</span><span class="p">()</span>
+</code></pre></div></div>
+
+<ul>
+  <li>Batch Redis commands</li>
+  <li>Avoid network overhead of sending individual messages</li>
+</ul>
+
+<h3 id="xack-docs">XACK (docs)</h3>
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>XACK key group <span class="nb">id</span> <span class="o">[</span><span class="nb">id</span> ...]
+</code></pre></div></div>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">redis_conn</span><span class="p">.</span><span class="nf">xack</span><span class="p">(</span><span class="n">STREAM_NAME</span><span class="p">,</span> <span class="n">GROUP_NAME</span><span class="p">,</span> <span class="o">*</span><span class="n">message_ids</span><span class="p">)</span>
+</code></pre></div></div>
+
+<ul>
+  <li>Confirms to Redis that the consumer has successfully processed the message.</li>
+  <li>This removes it from the “pending” queue of unacknowledged messages.</li>
+  <li>Without this step, Redis will think the message is still being processed and may redeliver it later (e.g., after a timeout or crash recovery).</li>
+</ul>
+
+<p>We only acknowledge messages after they are inserted into the database successfully. This ensures at-least-once delivery.</p>
+
+<h3 id="-redis-py">🧰 redis-py</h3>
+<p>Create a connection to a running Redis server:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">import</span> <span class="n">os</span><span class="p">,</span> <span class="n">json</span>
+<span class="kn">import</span> <span class="n">redis.asyncio</span> <span class="k">as</span> <span class="n">redis</span>
+
+<span class="n">REDIS_HOST</span> <span class="o">=</span> <span class="n">os</span><span class="p">.</span><span class="nf">getenv</span><span class="p">(</span><span class="sh">"</span><span class="s">REDIS_HOST</span><span class="sh">"</span><span class="p">,</span> <span class="sh">"</span><span class="s">localhost</span><span class="sh">"</span><span class="p">)</span>
+<span class="n">REDIS_PORT</span> <span class="o">=</span> <span class="nf">int</span><span class="p">(</span><span class="n">os</span><span class="p">.</span><span class="nf">getenv</span><span class="p">(</span><span class="sh">"</span><span class="s">REDIS_PORT</span><span class="sh">"</span><span class="p">,</span> <span class="mi">6379</span><span class="p">))</span>
+
+<span class="n">redis_conn</span><span class="p">:</span> <span class="n">redis</span><span class="p">.</span><span class="n">Redis</span> <span class="o">=</span> <span class="n">redis</span><span class="p">.</span><span class="nc">Redis</span><span class="p">(</span>
+    <span class="n">host</span><span class="o">=</span><span class="n">REDIS_HOST</span><span class="p">,</span>
+    <span class="n">port</span><span class="o">=</span><span class="n">REDIS_PORT</span><span class="p">,</span>
+    <span class="n">decode_responses</span><span class="o">=</span><span class="bp">True</span>
+<span class="p">)</span>
+</code></pre></div></div>
+<p>The best way of getting a Redis server up and running is with docker.</p>
+
+<p>Sample Redis configuration for a docker compose:</p>
+<div class="language-docker highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  redis:
+    image: redis:7.4-alpine
+    restart: always
+    container_name: my-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+</code></pre></div></div>
+
+<h3 id="️-worker-loop">⚙️ Worker Loop</h3>
+
+<p>Create groups and streams:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">GROUP_NAME</span> <span class="o">=</span> <span class="sh">"</span><span class="s">inserters</span><span class="sh">"</span>
+<span class="n">STREAMS</span> <span class="o">=</span> <span class="p">[</span><span class="sh">"</span><span class="s">stream_name_1</span><span class="sh">"</span><span class="p">,</span> <span class="sh">"</span><span class="s">stream_name_2</span><span class="sh">"</span><span class="p">]</span>
+
+<span class="k">async</span> <span class="k">def</span> <span class="nf">setup_consumer_groups</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">stream</span> <span class="ow">in</span> <span class="n">STREAMS</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">await</span> <span class="n">redis_conn</span><span class="p">.</span><span class="nf">xgroup_create</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="n">GROUP_NAME</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="sh">"</span><span class="s">0</span><span class="sh">"</span><span class="p">,</span> <span class="n">mkstream</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+            <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="s">Created group </span><span class="sh">'</span><span class="si">{</span><span class="n">GROUP_NAME</span><span class="si">}</span><span class="sh">'</span><span class="s"> on stream </span><span class="sh">'</span><span class="si">{</span><span class="n">stream</span><span class="si">}</span><span class="sh">'</span><span class="s">.</span><span class="sh">"</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">redis</span><span class="p">.</span><span class="n">ResponseError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="c1"># BUSYGROUP == already exists → safe to ignore
+</span>            <span class="k">if</span> <span class="sh">"</span><span class="s">BUSYGROUP</span><span class="sh">"</span> <span class="ow">in</span> <span class="nf">str</span><span class="p">(</span><span class="n">e</span><span class="p">):</span>
+                <span class="k">pass</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span>
+</code></pre></div></div>
+
+<p>Each worker is a long-running asyncio coroutine:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># consumer.py
+</span><span class="k">async</span> <span class="k">def</span> <span class="nf">run_worker</span><span class="p">(</span><span class="n">consumer_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">shutdown_event</span><span class="p">:</span> <span class="n">asyncio</span><span class="p">.</span><span class="n">Event</span><span class="p">):</span>
+    <span class="k">await</span> <span class="nf">setup_consumer_groups</span><span class="p">()</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="n">shutdown_event</span><span class="p">.</span><span class="nf">is_set</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="n">redis_conn</span><span class="p">.</span><span class="nf">xreadgroup</span><span class="p">(</span>
+                    <span class="n">GROUP_NAME</span><span class="p">,</span>
+                    <span class="n">consumer_name</span><span class="p">,</span>
+                    <span class="p">{</span> <span class="sh">"</span><span class="s">stream_name_1</span><span class="sh">"</span><span class="p">:</span> <span class="sh">"</span><span class="s">&gt;</span><span class="sh">"</span> <span class="p">},</span>
+                    <span class="n">count</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>  <span class="c1"># batch of 100
+</span>                    <span class="n">block</span><span class="o">=</span><span class="mi">5000</span><span class="p">,</span> <span class="c1"># block reads for 5s
+</span>                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">response</span><span class="p">:</span>
+                    <span class="k">await</span> <span class="nf">process_messages</span><span class="p">(</span><span class="n">consumer_name</span><span class="p">,</span> <span class="n">response</span><span class="p">)</span>
+
+            <span class="k">except</span> <span class="nb">Exception</span><span class="p">:</span>
+                <span class="nf">print</span><span class="p">(</span><span class="sh">"</span><span class="s">Unhandled error in worker loop; continuing.</span><span class="sh">"</span><span class="p">)</span>
+                <span class="k">await</span> <span class="n">asyncio</span><span class="p">.</span><span class="nf">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="nf">print</span><span class="p">(</span><span class="sh">"</span><span class="s">Exiting worker.</span><span class="sh">"</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>Create an event that tells workers to stop and shutdown:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># main.py
+</span><span class="n">shutdown_event</span> <span class="o">=</span> <span class="n">asyncio</span><span class="p">.</span><span class="nc">Event</span><span class="p">()</span>
+
+<span class="k">def</span> <span class="nf">handle_shutdown_signal</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">frame</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">shutdown_event</span><span class="p">.</span><span class="nf">is_set</span><span class="p">():</span>
+        <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">'</span><span class="s">Received signal </span><span class="si">{</span><span class="n">sig</span><span class="si">}</span><span class="s">. Initiating graceful shutdown...</span><span class="sh">'</span><span class="p">)</span>
+        <span class="n">shutdown_event</span><span class="p">.</span><span class="nf">set</span><span class="p">()</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">'</span><span class="s">Received signal </span><span class="si">{</span><span class="n">sig</span><span class="si">}</span><span class="s"> again. Shutdown in progress.</span><span class="sh">'</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>And coordinate through a main.py:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># main.py
+</span><span class="k">async</span> <span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="n">loop</span> <span class="o">=</span> <span class="n">asyncio</span><span class="p">.</span><span class="nf">get_running_loop</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="p">(</span><span class="n">signal</span><span class="p">.</span><span class="n">SIGINT</span><span class="p">,</span> <span class="n">signal</span><span class="p">.</span><span class="n">SIGTERM</span><span class="p">):</span>
+        <span class="n">loop</span><span class="p">.</span><span class="nf">add_signal_handler</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="n">handle_shutdown_signal</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="bp">None</span><span class="p">)</span>
+
+    <span class="n">hostname</span> <span class="o">=</span> <span class="n">socket</span><span class="p">.</span><span class="nf">gethostname</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">NUM_WORKERS</span><span class="p">):</span>
+        <span class="n">consumer_name</span> <span class="o">=</span> <span class="sa">f</span><span class="sh">'</span><span class="si">{</span><span class="n">WORKER_NAME_PREFIX</span><span class="si">}</span><span class="s">-</span><span class="si">{</span><span class="n">hostname</span><span class="si">}</span><span class="s">-</span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="sh">'</span>
+
+        <span class="n">task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="p">.</span><span class="nf">create_task</span><span class="p">(</span><span class="nf">run_worker</span><span class="p">(</span><span class="n">consumer_name</span><span class="p">,</span> <span class="n">shutdown_event</span><span class="p">),</span> <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="sh">'</span><span class="s">Worker-</span><span class="si">{</span><span class="n">consumer_name</span><span class="si">}</span><span class="sh">'</span><span class="p">)</span>
+        <span class="n">running_tasks</span><span class="p">.</span><span class="nf">append</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+
+    <span class="k">await</span> <span class="n">shutdown_event</span><span class="p">.</span><span class="nf">wait</span><span class="p">()</span>
+
+    <span class="n">timeout_seconds</span> <span class="o">=</span> <span class="mf">30.0</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">done</span><span class="p">,</span> <span class="n">pending</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="p">.</span><span class="nf">wait</span><span class="p">(</span><span class="n">running_tasks</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout_seconds</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">pending</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">task</span> <span class="ow">in</span> <span class="n">pending</span><span class="p">:</span>
+                <span class="n">task</span><span class="p">.</span><span class="nf">cancel</span><span class="p">()</span>
+
+            <span class="k">await</span> <span class="n">asyncio</span><span class="p">.</span><span class="nf">gather</span><span class="p">(</span><span class="o">*</span><span class="n">pending</span><span class="p">,</span> <span class="n">return_exceptions</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+             <span class="nf">print</span><span class="p">(</span><span class="sh">'</span><span class="s">All worker tasks completed gracefully.</span><span class="sh">'</span><span class="p">)</span>
+
+    <span class="k">except</span> <span class="nb">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nf">print</span><span class="p">(</span><span class="sh">'</span><span class="s">An error occurred while waiting for worker tasks.</span><span class="sh">'</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">redis_conn</span><span class="p">:</span>
+            <span class="k">await</span> <span class="n">redis_conn</span><span class="p">.</span><span class="nf">aclose</span><span class="p">()</span>
+            <span class="nf">print</span><span class="p">(</span><span class="sh">'</span><span class="s">Closed Redis connection.</span><span class="sh">'</span><span class="p">)</span>
+        
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nf">print</span><span class="p">(</span><span class="sh">'</span><span class="s">Redis connection already closed or not initialized.</span><span class="sh">'</span><span class="p">)</span>
+
+    <span class="k">except</span> <span class="nb">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">'</span><span class="s">Error closing Redis connection: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="sh">'</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">db_engine</span><span class="p">:</span>
+            <span class="k">await</span> <span class="n">db_engine</span><span class="p">.</span><span class="nf">dispose</span><span class="p">()</span>
+        
+        <span class="k">else</span><span class="p">:</span>
+             <span class="nf">print</span><span class="p">(</span><span class="sh">'</span><span class="s">Database engine not initialized.</span><span class="sh">'</span><span class="p">)</span>
+    
+    <span class="k">except</span> <span class="nb">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">'</span><span class="s">Error disposing database engine: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="sh">'</span><span class="p">)</span>
+
+    <span class="nf">print</span><span class="p">(</span><span class="sh">'</span><span class="s">Application shutdown complete.</span><span class="sh">'</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="sh">'</span><span class="s">__main__</span><span class="sh">'</span><span class="p">:</span>
+    <span class="n">asyncio</span><span class="p">.</span><span class="nf">run</span><span class="p">(</span><span class="nf">main</span><span class="p">())</span>
+</code></pre></div></div>
+
+<p>To run multiple consumers in parallel and shut them down cleanly, we use:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">NUM_WORKERS</span> <span class="o">=</span> <span class="nf">int</span><span class="p">(</span><span class="n">os</span><span class="p">.</span><span class="nf">getenv</span><span class="p">(</span><span class="sh">'</span><span class="s">NUM_CONSUMER_WORKERS</span><span class="sh">'</span><span class="p">,</span> <span class="sh">'</span><span class="s">3</span><span class="sh">'</span><span class="p">))</span> 
+
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">NUM_WORKERS</span><span class="p">):</span> 
+    <span class="n">task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="p">.</span><span class="nf">create_task</span><span class="p">(</span><span class="nf">run_worker</span><span class="p">(</span><span class="n">consumer_name</span><span class="p">,</span> <span class="n">shutdown_event</span><span class="p">))</span>
+</code></pre></div></div>
+<p>When a shutdown signal (SIGINT, SIGTERM) is received:</p>
+
+<ul>
+  <li>A shared shutdown_event is set.</li>
+  <li>All workers see the event and exit their loops.</li>
+  <li>We then await all workers for up to 30 seconds to finish up.</li>
+</ul>
+
+<p>Finally, we clean up resources:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">await</span> <span class="n">redis_conn</span><span class="p">.</span><span class="nf">aclose</span><span class="p">()</span> 
+<span class="k">await</span> <span class="n">db_engine</span><span class="p">.</span><span class="nf">dispose</span><span class="p">()</span>
+</code></pre></div></div>
+
+<h3 id="-processing-and-database-writes">📥 Processing and Database Writes</h3>
+
+<p>Create a <code class="language-plaintext highlighter-rouge">AsyncSession</code> generator that can be used by each worker to create an async session to insert the data into the database:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># models/database.py
+</span>
+<span class="kn">from</span> <span class="n">sqlalchemy.ext.asyncio</span> <span class="kn">import</span> <span class="n">create_async_engine</span><span class="p">,</span> <span class="n">AsyncEngine</span><span class="p">,</span> <span class="n">async_sessionmaker</span><span class="p">,</span> <span class="n">AsyncSession</span>
+
+<span class="n">AsyncSessionLocal</span> <span class="o">=</span> <span class="nf">async_sessionmaker</span><span class="p">(</span>
+    <span class="n">bind</span><span class="o">=</span><span class="n">engine</span><span class="p">,</span>
+    <span class="n">class_</span><span class="o">=</span><span class="n">AsyncSession</span><span class="p">,</span>
+    <span class="n">expire_on_commit</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div></div>
+
+<p>Messages are stored as JSON in a <code class="language-plaintext highlighter-rouge">"data"</code> field. A valid entry is parsed and mapped into a SQLModel ORM instance:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code>        <span class="k">try</span><span class="p">:</span>
+            <span class="k">async</span> <span class="k">with</span> <span class="nc">AsyncSessionLocal</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">incoming_stream</span><span class="p">.</span><span class="nf">values</span><span class="p">():</span>
+                    <span class="n">session</span><span class="p">.</span><span class="nf">add_all</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+
+                <span class="k">await</span> <span class="n">session</span><span class="p">.</span><span class="nf">commit</span><span class="p">()</span>
+</code></pre></div></div>
+
+<p>Finally, we acknowledge that the message was inserted:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">await</span> <span class="n">redis_conn</span><span class="p">.</span><span class="nf">xack</span><span class="p">(</span><span class="n">STREAM_NAME</span><span class="p">,</span> <span class="n">GROUP_NAME</span><span class="p">,</span> <span class="o">*</span><span class="n">ids_to_ack</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>Acknowledgment only happens after a successful DB insert, ensuring at-least-once delivery.</p>
+
+<p>Don’t forget to also apply <code class="language-plaintext highlighter-rouge">XTRIM</code> to manage how long our stream can get and don’t let it grow indefinitely.</p>
+
+<p>Full process_messages function:</p>
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">STREAM_MODEL_MAP</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Type</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">STREAM_NAME_1</span><span class="p">:</span> <span class="n">DatabaseTable1</span><span class="p">,</span>
+    <span class="n">STREAM_NAME_2</span><span class="p">:</span> <span class="n">DatabaseTable2</span><span class="p">,</span>
+<span class="p">}</span>
+    
+<span class="k">async</span> <span class="k">def</span> <span class="nf">process_messages</span><span class="p">(</span><span class="n">consumer_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">messages</span><span class="p">:</span> <span class="n">List</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">messages</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">0</span>
+
+    <span class="n">bucket</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Type</span><span class="p">,</span> <span class="n">List</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">DatabaseTable1</span><span class="p">:</span> <span class="p">[],}</span>
+    <span class="n">ack_success</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">ack_malformed</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">stream</span><span class="p">,</span> <span class="n">entries</span> <span class="ow">in</span> <span class="n">messages</span><span class="p">:</span>
+        <span class="n">model_cls</span> <span class="o">=</span> <span class="n">STREAM_MODEL_MAP</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="n">stream</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="n">model_cls</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="s">Unknown stream </span><span class="sh">'</span><span class="si">{</span><span class="n">stream</span><span class="si">}</span><span class="sh">'</span><span class="s"> – skipping.</span><span class="sh">"</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="k">for</span> <span class="n">entry_id</span><span class="p">,</span> <span class="n">fields</span> <span class="ow">in</span> <span class="n">entries</span><span class="p">:</span>
+            <span class="n">raw</span> <span class="o">=</span> <span class="n">fields</span><span class="p">.</span><span class="nf">get</span><span class="p">(</span><span class="sh">"</span><span class="s">data</span><span class="sh">"</span><span class="p">)</span>
+        
+            <span class="k">if</span> <span class="n">raw</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="si">{</span><span class="n">entry_id</span><span class="si">}</span><span class="s">: missing </span><span class="sh">'</span><span class="s">data</span><span class="sh">'</span><span class="s"> field, not ACKing.</span><span class="sh">"</span><span class="p">)</span>
+                <span class="n">ack_malformed</span><span class="p">.</span><span class="nf">append</span><span class="p">(</span><span class="n">entry_id</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="p">.</span><span class="nf">loads</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+                <span class="n">data</span><span class="p">[</span><span class="sh">'</span><span class="s">created_at</span><span class="sh">'</span><span class="p">]</span> <span class="o">=</span> <span class="n">datetime</span><span class="p">.</span><span class="nf">fromisoformat</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="sh">'</span><span class="s">created_at</span><span class="sh">'</span><span class="p">])</span>
+                
+                <span class="n">bucket</span><span class="p">[</span><span class="n">model_cls</span><span class="p">].</span><span class="nf">append</span><span class="p">(</span><span class="nf">model_cls</span><span class="p">(</span><span class="o">**</span><span class="n">data</span><span class="p">))</span>
+                <span class="n">ack_success</span><span class="p">.</span><span class="nf">append</span><span class="p">(</span><span class="n">entry_id</span><span class="p">)</span>
+            
+            <span class="k">except</span> <span class="nb">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="si">{</span><span class="n">entry_id</span><span class="si">}</span><span class="s">: parse/validation error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s"> – skipping.</span><span class="sh">"</span><span class="p">)</span>
+                <span class="n">ack_malformed</span><span class="p">.</span><span class="nf">append</span><span class="p">(</span><span class="n">entry_id</span><span class="p">)</span>
+
+    <span class="n">total_inserted</span> <span class="o">=</span> <span class="nf">sum</span><span class="p">(</span><span class="nf">len</span><span class="p">(</span><span class="n">entries</span><span class="p">)</span> <span class="k">for</span> <span class="n">entries</span> <span class="ow">in</span> <span class="n">bucket</span><span class="p">.</span><span class="nf">values</span><span class="p">())</span>
+
+    <span class="k">if</span> <span class="n">total_inserted</span><span class="p">:</span>
+        <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="s">Inserting batch of </span><span class="si">{</span><span class="n">total_inserted</span><span class="si">}</span><span class="s"> objects into DB...</span><span class="sh">"</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">async</span> <span class="k">with</span> <span class="nc">AsyncSessionLocal</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">bucket</span><span class="p">.</span><span class="nf">values</span><span class="p">():</span>
+                    <span class="n">session</span><span class="p">.</span><span class="nf">add_all</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+
+                <span class="k">await</span> <span class="n">session</span><span class="p">.</span><span class="nf">commit</span><span class="p">()</span>
+
+            <span class="nf">print</span><span class="p">(</span><span class="sh">"</span><span class="s">DB commit successful.</span><span class="sh">"</span><span class="p">)</span>
+
+        <span class="k">except</span> <span class="nb">Exception</span><span class="p">:</span>
+            <span class="nf">print</span><span class="p">(</span><span class="sh">"</span><span class="s">DB commit failed – nothing has been ACKed.</span><span class="sh">"</span><span class="p">)</span>
+            <span class="n">ack_success</span><span class="p">.</span><span class="nf">clear</span><span class="p">()</span>
+            <span class="n">total_inserted</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="n">ids_to_ack</span> <span class="o">=</span> <span class="n">ack_malformed</span> <span class="o">+</span> <span class="n">ack_success</span>
+    
+    <span class="k">if</span> <span class="n">ids_to_ack</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">await</span> <span class="n">redis_conn</span><span class="p">.</span><span class="nf">xack</span><span class="p">(</span><span class="o">*</span><span class="p">([</span><span class="n">stream</span> <span class="k">for</span> <span class="n">stream</span> <span class="ow">in</span> <span class="n">STREAM_MODEL_MAP</span><span class="p">.</span><span class="nf">keys</span><span class="p">()][</span><span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]),</span> <span class="n">GROUP_NAME</span><span class="p">,</span> <span class="o">*</span><span class="n">ids_to_ack</span><span class="p">)</span>
+        
+        <span class="k">except</span> <span class="nb">Exception</span><span class="p">:</span>
+            <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="s">Failed to ACK </span><span class="si">{</span><span class="nf">len</span><span class="p">(</span><span class="n">ids_to_ack</span><span class="p">)</span><span class="si">}</span><span class="s"> messages.</span><span class="sh">"</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">stream</span> <span class="ow">in</span> <span class="n">STREAM_MODEL_MAP</span><span class="p">.</span><span class="nf">keys</span><span class="p">():</span>
+            <span class="n">trimmed</span> <span class="o">=</span> <span class="k">await</span> <span class="n">redis_conn</span><span class="p">.</span><span class="nf">xtrim</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="n">maxlen</span><span class="o">=</span><span class="n">MAX_STREAM_LENGTH</span><span class="p">,</span> <span class="n">approximate</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+            
+            <span class="k">if</span> <span class="n">trimmed</span><span class="p">:</span>
+                <span class="nf">print</span><span class="p">(</span><span class="sa">f</span><span class="sh">"</span><span class="s">XTRIM </span><span class="si">{</span><span class="n">stream</span><span class="si">}</span><span class="s">: removed </span><span class="si">{</span><span class="n">trimmed</span><span class="si">}</span><span class="s"> old entries.</span><span class="sh">"</span><span class="p">)</span>
+    
+
+    <span class="k">return</span> <span class="n">total_inserted</span>
+</code></pre></div></div>
+
+<h3 id="thats-it-">That’s it! 🚀</h3>
+<p>Spin up a few producers, watch messages flow through Redis, and your Postgres table will keep up—without duplicate inserts or blocking I/O.</p>
+
+<p>You can try my set up by cloning my repo and running in two separate terminals:</p>
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># spin up consumer</span>
+uv run worker/main.py
+</code></pre></div></div>
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c"># send messages to redis</span>
+uv run worker/producer.py <span class="nt">--mode</span> stream <span class="nt">--entity</span> ProductURL
+uv run worker/producer.py <span class="nt">--mode</span> bulk <span class="nt">--entity</span> Product
+</code></pre></div></div>
+
+<p>Run stream (uses single xadd commands):
+<img src="" alt="" /></p>
+
+<p><img src="" alt="" /></p>
+
+<p>Run bulk (uses pipeline.xadd):</p>
+
+<p><img src="" alt="" /></p>
+
+<p><img src="" alt="" /></p>
+
+<p>Feedback &amp; PRs welcome over at <code class="language-plaintext highlighter-rouge">github.com/quanturtle/supermarket‑py</code></p>

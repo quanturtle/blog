@@ -40,3 +40,4 @@ _drafts/
 .python-version
 main.py
 pyproject.toml
+.jekyll-cache/
