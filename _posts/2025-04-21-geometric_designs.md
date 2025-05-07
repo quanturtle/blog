@@ -1,6 +1,7 @@
 ---
 title: 🖼️ Geometric and Artistic Designs with your Micro Computer
-author: quanturtle
+subtitle: "unstructured data + regex + search"
+date: "2025-04-22"
 ---
 
 # 🖼️ Geometric and Artistic Designs with your Micro Computer

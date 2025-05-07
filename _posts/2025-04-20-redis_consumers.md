@@ -1,6 +1,7 @@
 ---
 title: 🚀 Building a High-Throughput Async Consumer System with Redis Streams and SQLModel
-author: quanturtle
+subtitle: "unstructured data + regex + search"
+date: "2025-04-22"
 ---
 
 # 🚀 Building a High-Throughput Async Consumer System with Redis Streams and SQLModel

@@ -25,11 +25,6 @@ title: Blog
                 <time class="text-sm mb-3 block">
                     {{ post.date | date: "%B %-d, %Y" }}
                 </time>
-                {% if post.excerpt %}
-                <p class="text-neutral-600">
-                    {{ post.excerpt }}
-                </p>
-                {% endif %}
             </a>
         </article>
         {% endfor %}
