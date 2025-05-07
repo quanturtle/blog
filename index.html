@@ -1,28 +1,26 @@
 ---
 layout: default
-title: Blog
+title: Journal
 ---
 
-<section class="space-y-12">
-    <header>
-        <h1 class="font-display text-4xl mb-12 border-b border-black pb-4">
-            Blog
-        </h1>
+<section class="space-y-8">
+    <header class="text-center">
+        <h1 class="font-display text-5xl">Blog</h1>
     </header>
 
-    <div class="space-y-8">
+    <div class="grid gap-8 md:grid-cols-2">
         {% for post in site.posts %}
-        <article class="border-b border-black/10 pb-8">
-            <a href="{{ post.url | relative_url }}" class="block group">
-                <h2 class="font-display text-2xl mb-1 group-hover:text-neutral-600 transition-colors">
+        <article class="bg-white rounded-2xl shadow hover:shadow-lg transition p-6">
+            <a href="{{ post.url | relative_url }}" class="group block">
+                <h2 class="font-display text-2xl mb-1 group-hover:text-blue-600 transition-colors">
                     {{ post.title }}
                 </h2>
                 {% if post.subtitle %}
-                <h3 class="text-lg mb-2 text-neutral-700">
+                <h3 class="text-lg text-gray-700 mb-3">
                     {{ post.subtitle }}
                 </h3>
                 {% endif %}
-                <time class="text-sm mb-3 block">
+                <time class="text-sm text-gray-500 block mb-4">
                     {{ post.date | date: "%B %-d, %Y" }}
                 </time>
             </a>

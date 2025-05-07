@@ -6,13 +6,43 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>{{ page.title | default: site.title }}</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        display: ['"Helvetica Now Display"', 'sans-serif'],
+                    }
+                }
+            },
+            plugins: [tailwindcssTypography]
+        }
+    </script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
 </head>
 
-<body class="bg-white text-black">
-    <main class="px-4 py-8">
+<body class="bg-gray-50 text-gray-800 antialiased">
+
+    <header class="bg-white shadow-sm">
+        <div class="container mx-auto px-4 py-6 flex items-center justify-between">
+            <a href="{{ '/' | relative_url }}" class="font-display text-2xl hover:text-gray-600 transition">
+                {{ site.title }}
+            </a>
+            <nav>
+                <a href="{{ '/' | relative_url }}" class="mr-4 text-gray-600 hover:text-gray-900">Home</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 py-12">
         {{ content }}
     </main>
+
+    <footer class="bg-white border-t mt-16">
+        <div class="container mx-auto px-4 py-6 text-center text-sm text-gray-500">
+            © {{ site.time | date: '%Y' }} {{ site.title }}. All rights reserved.
+        </div>
+    </footer>
 </body>
 
 </html>
