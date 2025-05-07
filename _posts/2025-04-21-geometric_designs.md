@@ -10,7 +10,7 @@ Tangents lead to tangents that lead to further tangents and then I found v3ga’
 
 That’s how I read about Jean-Paul Delahaye and his book Dessins Géométriques et Artistiques avec votre micro-ordinateur (1985).
 
-![](/img/geometric_designs/geometric_designs_1.jpg)
+![](../img/geometric_designs/geometric_designs_01.jpg)
 
 I immediately fell in love with his work and how he was using the technology available at the time to bring this equations into the real world. Namely Microsoft’s BASIC programming language and a Canon X-07 with a X-710 plotter.
 
@@ -20,19 +20,26 @@ Have a look:
 
 His designs, scanned from an original edition, have that distinctive hue of yellow that you get from an old book.
 
-![](/img/geometric_designs/geometric_designs_02.jpg)
+![](../img/geometric_designs/geometric_designs_02.jpg)
 
-![](/img/geometric_designs/geometric_designs_03.jpg)
+![](../img/geometric_designs/geometric_designs_03.jpg)
 
-![](/img/geometric_designs/geometric_designs_04.jpg)
+![](../img/geometric_designs/geometric_designs_04.jpg)
 
-![](/img/geometric_designs/geometric_designs_05.jpg)
+![](../img/geometric_designs/geometric_designs_05.jpg)
 
+![](../img/geometric_designs/geometric_designs_06.jpg)
+
+![](../img/geometric_designs/geometric_designs_07.jpg)
 
 ## How can I recreate these designs?
 The book provides clear instructions on how to set up everything we need to draw:
 
-![](./img/geometric_designs/)
+![](../img/geometric_designs/geometric_designs_08.jpg)
+
+![](../img/geometric_designs/geometric_designs_09.jpg)
+
+![](../img/geometric_designs/geometric_designs_10.jpg)
 
 Important things:
 
@@ -51,7 +58,7 @@ Important things:
 ## No French? No BASIC?
 v3ga used p5.js to code the designs again in modern javascript. I don’t know javascript so I opted for python and specifically its Turtle module. Turtle allows you to move a cursor and draw in the same way the Canon X-07 could, so we give it a try:
 
-![]()
+![](../img/geometric_designs/geometric_designs_11.jpg)
 
 Import + set up our canvas:
 ```python
@@ -175,7 +182,7 @@ My programs generate X, Y coordinates so that the turtle head can trace the desi
 
 In order to achieve this, I decided to 3D print these designs but for that, I had to learn CAD.
 
-After trying some libraries, I decided to go for [`build123d`]():
+After trying some libraries, I decided to go for [`build123d`](https://github.com/gumyr/build123d):
 
 ```python
 from typing import List
@@ -212,12 +219,18 @@ Important things here:
 * We `extrude` our 2D object over the `Z axis` to have an object with `volume`
 * Finally, export the design and you can throw it in your slicer ready to print!
 
-![]()
+![](../img/geometric_designs/geometric_designs_12.jpg)
 
-![]()
+![](../img/geometric_designs/geometric_designs_15.jpg)
+
+![](../img/geometric_designs/geometric_designs_16.jpg)
 
 Re-coding Jean-Paul Delahaye’s 1980-era BASIC sketches in modern Python—and then turning those digital tracings into tangible objects—felt like finishing a conversation that began four decades ago.
 
 Along the way we bridged three generations of “maker” tools: early micro-computers, modern programming languages, and today’s rapid-prototyping hardware. What started as a simple port became a reminder that code—no matter how old—can keep expressing itself in new mediums as long as we’re willing to translate it.
+
+![](../img/geometric_designs/geometric_designs_13.jpg)
+
+![](../img/geometric_designs/geometric_designs_14.jpg)
 
 I hope these examples encourage you to dust off other vintage algorithms, give them a modern dialect, and let today’s machines draw them in plastic, resin, or whatever comes next.
