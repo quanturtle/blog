@@ -1,0 +1,37 @@
+---
+layout: default
+title: Blog
+---
+
+<section class="space-y-12">
+    <header>
+        <h1 class="font-display text-4xl mb-12 border-b border-black pb-4">
+            Blog
+        </h1>
+    </header>
+
+    <div class="space-y-8">
+        {% for post in site.posts %}
+        <article class="border-b border-black/10 pb-8">
+            <a href="{{ post.url | relative_url }}" class="block group">
+                <h2 class="font-display text-2xl mb-1 group-hover:text-neutral-600 transition-colors">
+                    {{ post.title }}
+                </h2>
+                {% if post.subtitle %}
+                <h3 class="text-lg mb-2 text-neutral-700">
+                    {{ post.subtitle }}
+                </h3>
+                {% endif %}
+                <time class="text-sm mb-3 block">
+                    {{ post.date | date: "%B %-d, %Y" }}
+                </time>
+                {% if post.excerpt %}
+                <p class="text-neutral-600">
+                    {{ post.excerpt }}
+                </p>
+                {% endif %}
+            </a>
+        </article>
+        {% endfor %}
+    </div>
+</section>
