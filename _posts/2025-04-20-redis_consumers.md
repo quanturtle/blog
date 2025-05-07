@@ -1,11 +1,8 @@
 ---
-title: 🚀 Building a High-Throughput Async Consumer System with Redis Streams and SQLModel
-subtitle: "unstructured data + regex + search"
+title: "🚀 Building a High-Throughput Async Consumer System with Redis Streams and SQLModel"
+subtitle: "Redis + asyncio + SQLModel"
 date: "2025-04-22"
 ---
-
-# 🚀 Building a High-Throughput Async Consumer System with Redis Streams and SQLModel
-> Redis + asyncio + SQLModel
 
 >TL;DR — We’ll wire up Redis Streams to buffer messages, a consumer-group of asyncio workers to process them in parallel, and SQLModel + PostgreSQL to persist everything safely.
 The full repo lives in [supermarket-py](https://github.com/quanturtle/supermarket-py); below are the key excerpts you can drop straight into your own project.

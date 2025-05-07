@@ -1,11 +1,8 @@
 ---
-title: 🖼️ Geometric and Artistic Designs with your Micro Computer
-subtitle: "unstructured data + regex + search"
+title: "🖼️ Geometric and Artistic Designs with your Micro Computer"
+subtitle: "Recursion + Computer Graphics + 3D printing"
 date: "2025-04-22"
 ---
-
-# 🖼️ Geometric and Artistic Designs with your Micro Computer
-> Recursion + Computer Graphics + 3D printing
 
 > TL;DR — Translated designs from BASIC to modern python and then 3D printed them. All code for this project can be found in my repository: Dessins Geometriques et Artistiques.
 
